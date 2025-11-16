@@ -63,7 +63,11 @@ def main():
                 conn.close()
                 continue
         except Exception as e:
-            print(f"❌ Certificate verification error: {e}")
+            error_msg = str(e)
+            if "BAD CERT" in error_msg.upper() or "UNTRUSTED" in error_msg.upper() or "EXPIRED" in error_msg.upper():
+                print(f"BAD CERT: {e}")
+            else:
+                print(f"❌ Certificate verification error: {e}")
             conn.close()
             continue
 
@@ -157,7 +161,7 @@ def main():
 
             # Verify sequence number is strictly increasing (replay protection)
             if msg.seqno <= last_client_seq:
-                print("❌ Replay attack detected - sequence number not increasing")
+                print("REPLAY: Sequence number not increasing (replay attack detected)")
                 break
             last_client_seq = msg.seqno
 
@@ -171,7 +175,7 @@ def main():
             # Verify signature over SHA256(seqno || ts || ct)
             hash_data = hashlib.sha256(f"{msg.seqno}{msg.ts}{msg.ct}".encode()).digest()
             if not rsa_verify_b64(hash_data, msg.sig, cert=client_cert):
-                print("❌ Signature verification failed")
+                print("SIG FAIL: Signature verification failed")
                 break
 
             # Decrypt message
@@ -200,30 +204,35 @@ def main():
             t.append(reply_seq, reply_ts, reply_ct, reply_sig, server_fingerprint)
 
         # -------------------- SESSION RECEIPT (NON-REPUDIATION) -------------------- #
-        # Generate and send server receipt
+        # Generate and send server receipt (only if there are messages in transcript)
         first_seq, last_seq = t.seq_range()
-        transcript_hash = t.final_hash_hex()
         
-        # Sign the transcript hash (convert hex string to bytes for signing)
-        transcript_hash_bytes = bytes.fromhex(transcript_hash)
-        receipt_sig = rsa_sign_b64(transcript_hash_bytes, key_path="certs/private/server_cert_key.pem")
-        
-        receipt = Receipt(
-            peer="server",
-            first_seq=first_seq,
-            last_seq=last_seq,
-            transcript_sha256=transcript_hash,
-            sig=receipt_sig
-        )
-        
-        # Send receipt to client
-        try:
-            send(conn, receipt.model_dump())
-            print(f"✓ Server SessionReceipt generated and sent:")
-            print(f"  First seq: {first_seq}, Last seq: {last_seq}")
-            print(f"  Transcript hash: {transcript_hash}")
-        except:
-            pass  # Connection may be closed
+        # Only generate receipt if we have messages in transcript
+        if first_seq is not None and last_seq is not None:
+            transcript_hash = t.final_hash_hex()
+            
+            # Sign the transcript hash (convert hex string to bytes for signing)
+            transcript_hash_bytes = bytes.fromhex(transcript_hash)
+            receipt_sig = rsa_sign_b64(transcript_hash_bytes, key_path="certs/private/server_cert_key.pem")
+            
+            receipt = Receipt(
+                peer="server",
+                first_seq=first_seq,
+                last_seq=last_seq,
+                transcript_sha256=transcript_hash,
+                sig=receipt_sig
+            )
+            
+            # Send receipt to client
+            try:
+                send(conn, receipt.model_dump())
+                print(f"✓ Server SessionReceipt generated and sent:")
+                print(f"  First seq: {first_seq}, Last seq: {last_seq}")
+                print(f"  Transcript hash: {transcript_hash}")
+            except:
+                pass  # Connection may be closed
+        else:
+            print("⚠ No messages in transcript - skipping receipt generation")
 
         conn.close()
 

@@ -46,41 +46,77 @@ securechat-skeleton/
 └─ .github/workflows/ci.yml  # Compile-only sanity check (no execution)
 ```
 
-## ⚙️ Setup Instructions
+## ⚙️ Execution Steps
 
-1. **Fork this repository** to your own GitHub account(using official nu email).  
-   All development and commits must be performed in your fork.
+### Prerequisites
+- Python 3.8 or higher
+- MySQL database (or Docker for MySQL)
+- Git (for version control)
 
-2. **Set up environment**:
-   ```bash
-   python3 -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   cp .env.example .env
-   ```
+### Step 1: Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-3. **Initialize MySQL** (recommended via Docker):
-   ```bash
-   docker run -d --name securechat-db        -e MYSQL_ROOT_PASSWORD=rootpass        -e MYSQL_DATABASE=securechat        -e MYSQL_USER=scuser        -e MYSQL_PASSWORD=scpass        -p 3306:3306 mysql:8
-   ```
+### Step 2: Set Up MySQL Database
+**Option A: Using Docker (Recommended)**
+```bash
+docker run -d --name securechat-db \
+  -e MYSQL_ROOT_PASSWORD=rootpass \
+  -e MYSQL_DATABASE=securechat \
+  -e MYSQL_USER=scuser \
+  -e MYSQL_PASSWORD=scpass \
+  -p 3306:3306 mysql:8
+```
 
-4. **Create tables**:
-   ```bash
-   python -m app.storage.db --init
-   ```
+**Option B: Using Local MySQL**
+- Create a database named `securechat`
+- Update `.env` file with your MySQL credentials (if using)
 
-5. **Generate certificates** (after implementing the scripts):
-   ```bash
-   python scripts/gen_ca.py --name "FAST-NU Root CA"
-   python scripts/gen_cert.py --cn server.local --out certs/server
-   python scripts/gen_cert.py --cn client.local --out certs/client
-   ```
+### Step 3: Initialize Database Schema
+```bash
+python init_db.py
+```
+This creates the users table and a test user (alice/alice123).
 
-6. **Run components** (after implementation):
-   ```bash
-   python -m app.server
-   # in another terminal:
-   python -m app.client
-   ```
+### Step 4: Generate Certificates
+```bash
+python setup_certs.py
+```
+This generates:
+- Root CA certificate (`certs/ca.pem`)
+- Server certificate (`certs/server_cert.pem`)
+- Client certificate (`certs/client_cert.pem`)
+- Private keys (in `certs/private/`)
+
+### Step 5: Run the Server
+```bash
+python -m app.server
+```
+The server will start on port 9000 and display "Server ready."
+
+### Step 6: Run the Client (in a new terminal)
+```bash
+python -m app.client
+```
+You can now send messages. Type `exit` to end the session.
+
+### Step 7: Run Tests (Optional)
+```bash
+# Test invalid certificates
+python tests/test_invalid_cert.py
+
+# Test tampering detection
+python tests/test_tamper.py
+
+# Test replay attack detection
+python tests/test_replay.py
+
+# Verify transcript and non-repudiation
+python tests/verify_transcript.py transcripts/client_session.log certs/client_cert.pem certs/server_cert.pem
+```
+
+**Note:** Make sure the server is running before executing test scripts.
 
 ## 🚫 Important Rules
 
